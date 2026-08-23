@@ -295,6 +295,10 @@ nav button.on{color:var(--acc)}
 
     <label for="ghToken">Токен GitHub</label>
     <input id="ghToken" type="password" placeholder="ghp_…" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="ghost" id="showTok" style="flex:1">Показать токен</button>
+      <button class="ghost" id="copyTok" style="flex:1">Скопировать</button>
+    </div>
     <div class="small muted" style="margin-top:6px">
       github.com → Settings → Developer settings → Personal access tokens → Tokens (classic),
       права <b>repo</b>. Токен виден только тебе.
@@ -937,6 +941,24 @@ document.getElementById("forgetTok").onclick = function(){
   gh().token = ""; save();
   document.getElementById("ghToken").value = "";
   status("", "Только на этом устройстве"); slog("Токен удалён из этого браузера.");
+};
+
+document.getElementById("showTok").onclick = function(){
+  var f = document.getElementById("ghToken");
+  var hidden = f.type === "password";
+  f.type = hidden ? "text" : "password";
+  this.textContent = hidden ? "Скрыть токен" : "Показать токен";
+};
+document.getElementById("copyTok").onclick = function(){
+  var f = document.getElementById("ghToken");
+  var v = f.value;
+  if(!v){ slog("Токена в этом браузере нет."); return; }
+  var done = function(){ slog("Токен скопирован. Вставь его в это же поле на другом устройстве."); };
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(v).then(done, function(){ f.type="text"; f.select(); slog("Скопируй вручную — токен показан выше."); });
+  } else {
+    f.type = "text"; f.select(); document.execCommand && document.execCommand("copy"); done();
+  }
 };
 document.getElementById("expJson2").onclick = function(){
   dl("finansy.json", JSON.stringify(S, null, 2), "application/json");
