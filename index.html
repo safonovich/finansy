@@ -138,7 +138,6 @@ nav button.on{color:var(--acc)}
 @media(min-width:720px){
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}
   .grid2>.card{margin-bottom:0}
-  .bal{font-size:46px}
 }
 </style>
 </head>
@@ -446,9 +445,15 @@ function render(){
   var st = stats(cur);
 
   // баланс
-  document.getElementById("balTotal").textContent = money(st.bal);
-  document.getElementById("balTotal").style.color = st.bal>=0 ? css("--acc") : css("--tx");
-  document.getElementById("balNoOnce").textContent = "без разовых: " + money(st.balO);
+  var bt = document.getElementById("balTotal");
+  bt.textContent = money(st.bal);
+  bt.style.color = st.bal>=0 ? css("--acc") : css("--tx2");
+  // минус показываем мелко, плюс растёт вместе с суммой
+  bt.style.fontSize = (st.bal < 0 ? 22 : 30 + Math.min(1, st.bal/150000) * 30).toFixed(0) + "px";
+  bt.style.fontWeight = st.bal < 0 ? 500 : 650;
+  var bo = document.getElementById("balNoOnce");
+  bo.textContent = "без разовых: " + money(st.balO);
+  bo.style.fontSize = st.balO > 0 && st.bal < 0 ? "16px" : "14px";
   document.getElementById("incSum").textContent = fmt(st.inc)+" ₽";
   document.getElementById("expSum").textContent = fmt(st.exp)+" ₽";
 
