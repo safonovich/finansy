@@ -341,7 +341,7 @@ function t(type,amount,desc,cat,date,once){
 }
 
 /* ---------- пустой старт: данные приходят из приватного репозитория ---------- */
-function seed(){ return {tx:[], cushion:0, theme:"auto", gh:{repo:"", path:"finansy.json", token:""}, base:""}; }
+function seed(){ return {tx:[], cushion:0, theme:"auto", gh:{repo:"safonovich/ozon-data", path:"finansy.json", token:""}, base:""}; }
 
 /* ---------- магазин Ozon: сбор робота, github.com/safonovich/ozon-data ---------- */
 var OZON = { собрано: "", месяцы: [] };
@@ -712,7 +712,9 @@ document.getElementById("impFile").onchange = function(){
 var API = "https://api.github.com";
 var remoteSha = null, busy = false;
 
-function gh(){ S.gh = S.gh || {repo:"", path:"finansy.json", token:""}; return S.gh; }
+function gh(){ S.gh = S.gh || {repo:"", path:"", token:""};
+  if(!S.gh.repo) S.gh.repo = "safonovich/ozon-data";
+  if(!S.gh.path) S.gh.path = "finansy.json"; return S.gh; }
 function ready(){ var g = gh(); return !!(g.token && g.repo && g.path); }
 
 function b64(str){
@@ -908,14 +910,18 @@ document.getElementById("setOverlay").onclick = function(e){
 };
 function readSettings(){
   var g = gh();
-  g.repo = document.getElementById("ghRepo").value.trim().replace(/^https?:\/\/github\.com\//, "");
+  g.repo = document.getElementById("ghRepo").value.trim().replace(/^https?:\/\/github\.com\//, "").replace(/\/$/, "") || g.repo;
   g.path = document.getElementById("ghPath").value.trim() || "finansy.json";
   g.token = document.getElementById("ghToken").value.trim();
   save();
 }
 document.getElementById("syncNow").onclick = function(){
-  readSettings(); slog("Проверяю…");
-  pull(false).then(function(){ pullOzon(); });
+  readSettings();
+  var g = gh();
+  if(!g.repo){ slog("Впиши репозиторий, например safonovich/ozon-data"); return; }
+  if(!g.token){ slog("Нужен токен GitHub с правами repo"); return; }
+  slog("Проверяю…");
+  pull(false).then(function(){ pullOzon(); slog(document.getElementById("syncLog").textContent === "Проверяю…" ? "Готово" : document.getElementById("syncLog").textContent); });
 };
 document.getElementById("pullNow").onclick = function(){
   readSettings();
