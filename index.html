@@ -173,7 +173,10 @@ nav button.on{color:var(--acc)}
 
     <div class="grid2">
       <div class="card">
-        <h3 style="margin-bottom:12px">Траты по категориям</h3>
+        <div class="seg" id="pieSeg" style="margin-bottom:14px">
+          <button data-p="income" class="on">Доходы</button>
+          <button data-p="expense">Траты</button>
+        </div>
         <div class="donutwrap">
           <div id="donut"></div>
           <div class="legend" id="donutLeg" style="flex-direction:column;gap:8px"></div>
@@ -333,7 +336,7 @@ var KEY = "finsaf.v1";
 var MONTHS = ["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
 
 var CATS = {
-  expense:["Продукты","Еда вне дома","Транспорт","Семья","Дом и связь","Работа","Здоровье","Переводы","Прочее"],
+  expense:["Продукты","Еда вне дома","Транспорт","Отдых и поездки","Подарки и помощь","Дом и связь","Работа","Здоровье","Переводы","Прочее"],
   income:["Кинцуги МК","Кинцуги наборы","Ozon магазин","Съёмки","Боты","Прочее"]
 };
 var PASSIVE = ["Ozon магазин","Кинцуги наборы","Боты"];
@@ -349,12 +352,22 @@ function seed(){ return {tx:[], cushion:0, theme:"auto", gh:{repo:"safonovich/oz
 
 /* ---------- магазин Ozon: сбор робота, github.com/safonovich/ozon-data ---------- */
 var OZON = { собрано: "", месяцы: [] };
+
+/* старая категория «Семья» была слишком размытой — продукты ведь тоже для семьи */
+var CAT_FIX = {"Семья": "Отдых и поездки"};
+function migrate(list){
+  (list || []).forEach(function(x){ if(CAT_FIX[x.cat]) x.cat = CAT_FIX[x.cat]; });
+  return list;
+}
+
 /* ---------- состояние ---------- */
 var S;
 try { S = JSON.parse(localStorage.getItem(KEY)) || seed(); } catch(e){ S = seed(); }
 if(!S.tx) S = seed();
+migrate(S.tx);
 function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
 
+var pieMode = "income";
 var cur = new Date(2026,7,1);
 (function(){ // если есть операции позже августа 2026 — открыться на последнем месяце
   var mx = S.tx.map(function(x){return x.date;}).sort().pop();
@@ -382,7 +395,7 @@ function stats(d){
 /* ---------- графики ---------- */
 function donut(data){ // [{name,val,color}]
   var total = data.reduce(function(s,x){return s+x.val;},0);
-  if(!total) return '<div class="muted small" style="padding:20px 0">нет трат</div>';
+  if(!total) return '<div class="muted small" style="padding:20px 0">пусто</div>';
   var R=54, C=2*Math.PI*R, off=0, seg="";
   data.forEach(function(x){
     var len = x.val/total*C;
@@ -450,14 +463,17 @@ function render(){
       + (di<0? "меньше на "+fmt(-di) : di>0 ? "больше на "+fmt(di) : "столько же") + " ₽.";
   } else cmp.textContent = "";
 
-  // кольцо
+  // кольцо: доходы или траты
   var by = {};
-  st.list.filter(function(x){return x.type==="expense";}).forEach(function(x){ by[x.cat]=(by[x.cat]||0)+x.amount; });
+  st.list.filter(function(x){return x.type===pieMode;}).forEach(function(x){ by[x.cat]=(by[x.cat]||0)+x.amount; });
   var arr = Object.keys(by).map(function(k){return {name:k,val:by[k]};}).sort(function(a,b){return b.val-a.val;});
   var tot = arr.reduce(function(s,x){return s+x.val;},0);
   arr.forEach(function(x,i){ x.color = css(COLORS[i%COLORS.length]); });
   document.getElementById("donut").innerHTML = donut(arr);
-  document.getElementById("donutLeg").innerHTML = arr.map(function(x){
+  document.getElementById("donutLeg").innerHTML =
+    (tot ? '<span style="font-weight:600;margin-bottom:2px">' + (pieMode==="income"?"Доходы":"Траты")
+      + ' ' + fmt(tot) + ' ₽</span>' : "") +
+    arr.map(function(x){
     return '<span><i class="dot" style="background:'+x.color+'"></i>'+esc(x.name)
       +' <b class="tnum">'+fmt(x.val)+'</b> <span class="muted">'+Math.round(x.val/tot*100)+'%</span></span>';
   }).join("");
@@ -550,6 +566,13 @@ function go(v){
 }
 [].forEach.call(document.querySelectorAll("nav button"), function(b){
   b.onclick = function(){ go(b.dataset.v); };
+});
+[].forEach.call(document.querySelectorAll("#pieSeg button"), function(b){
+  b.onclick = function(){
+    pieMode = b.dataset.p;
+    [].forEach.call(document.querySelectorAll("#pieSeg button"), function(x){ x.classList.toggle("on", x.dataset.p===pieMode); });
+    render();
+  };
 });
 document.getElementById("prevM").onclick = function(){ cur = new Date(cur.getFullYear(), cur.getMonth()-1, 1); render(); };
 document.getElementById("nextM").onclick = function(){ cur = new Date(cur.getFullYear(), cur.getMonth()+1, 1); render(); };
@@ -790,7 +813,7 @@ function pull(silent){
 }
 
 function applyRemote(obj){
-  S.tx = obj.tx || [];
+  S.tx = migrate(obj.tx || []);
   S.cushion = obj.cushion || 0;
   S.base = obj.updatedAt || new Date().toISOString();
   save(); hideBanner(); render();
