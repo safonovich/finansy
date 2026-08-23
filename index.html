@@ -256,6 +256,12 @@ nav button.on{color:var(--acc)}
       <div class="small muted" style="margin-top:12px" id="ozNote"></div>
     </div>
 
+    <div class="card" id="yaCard">
+      <div class="row"><h3>Магазин Яндекс Маркет</h3><div class="muted small" id="yaDate"></div></div>
+      <div id="yaRows"></div>
+      <div class="small muted" style="margin-top:12px" id="yaNote"></div>
+    </div>
+
     <div class="card">
       <h3>Подушка</h3>
       <label for="cushion">Сколько денег в запасе, ₽</label>
@@ -351,6 +357,7 @@ function seed(){ return {tx:[], cushion:0, theme:"auto", gh:{repo:"safonovich/oz
 
 /* ---------- магазин Ozon: сбор робота, github.com/safonovich/ozon-data ---------- */
 var OZON = { собрано: "", месяцы: [] };
+var YANDEX = { собрано: "", месяцы: [] };
 
 /* старая категория «Семья» была слишком размытой — продукты ведь тоже для семьи */
 var CAT_FIX = {"Семья": "Отдых и поездки"};
@@ -548,6 +555,36 @@ function render(){
     document.getElementById("ozNote").textContent =
       "Продано " + oz.штук + " шт. До тебя доходит " + доля + "% от цены. "
       + "Начисления приходят на счёт с задержкой — в доходах их отмечай по факту поступления.";
+  }
+
+  // магазин Яндекс Маркет
+  var ya = YANDEX.месяцы.filter(function(x){ return x.м === key(cur); })[0];
+  var yaCard = document.getElementById("yaCard");
+  document.getElementById("yaDate").textContent = YANDEX.собрано ? "данные робота на " + YANDEX.собрано : "";
+  if(!YANDEX.месяцы.length){
+    yaCard.classList.add("hide");
+  } else {
+    yaCard.classList.remove("hide");
+    if(!ya || (!ya.продано && !ya.выплачено)){
+      document.getElementById("yaRows").innerHTML =
+        '<div class="muted small" style="padding:8px 0">За этот месяц продаж не было.</div>';
+      document.getElementById("yaNote").textContent = "";
+    } else {
+      var lineY = function(k, v, big){
+        return '<div class="row" style="padding:7px 0;border-bottom:1px solid var(--line)">'
+          + '<span'+(big?' style="font-weight:600"':' class="muted"')+'>'+k+'</span>'
+          + '<span class="tnum"'+(big?' style="font-weight:600;color:'+css("--acc")+'"':'')+'>'+money(v)+'</span></div>';
+      };
+      document.getElementById("yaRows").innerHTML =
+          lineY("Продано на", ya.продано)
+        + lineY("Удержал Маркет", ya.удержано)
+        + (ya.реклама ? lineY("Из них продвижение", ya.реклама) : "")
+        + (ya.возвраты ? lineY("Возвраты", ya.возвраты) : "")
+        + lineY("Выплачено", ya.выплачено, true);
+      var доляY = ya.продано ? Math.round(ya.выплачено / ya.продано * 100) : 0;
+      document.getElementById("yaNote").textContent =
+        "Продано " + ya.штук + " шт." + (ya.продано ? " До тебя доходит " + доляY + "% от цены." : "");
+    }
   }
 
   // подушка
@@ -868,6 +905,36 @@ function push(force){
     .then(function(){ busy = false; });
 }
 
+function pullYandex(){
+  var g = gh();
+  if(!ready()) return;
+  api("/repos/" + g.repo + "/contents/data/yandex.json?t=" + Date.now())
+    .then(function(res){
+      if(res.missing) return;
+      var o = JSON.parse(unb64(res.content));
+      var ms = o["месяцы"] || {};
+      YANDEX = { собрано: (o["обновлено"] || "").slice(0,10).split("-").reverse().join("."), месяцы: [] };
+      Object.keys(ms).sort().forEach(function(k){
+        var b = ms[k] || {};
+        var реклама = 0;
+        (b["строки"] || []).forEach(function(r){
+          if(/родвижение|буст|реклам/i.test(r["тип"])) реклама += r["сумма"];
+        });
+        YANDEX.месяцы.push({
+          м: k,
+          продано: b["продано"] || 0,
+          удержано: b["удержано"] || 0,
+          выплачено: b["выплачено"] || 0,
+          возвраты: b["возвраты"] || 0,
+          реклама: реклама,
+          штук: b["штук"] || 0
+        });
+      });
+      render();
+    })
+    .catch(function(){});
+}
+
 function pullOzon(){
   var g = gh();
   if(!ready()) return;
@@ -953,7 +1020,7 @@ document.getElementById("syncNow").onclick = function(){
   if(!g.repo){ slog("Впиши репозиторий, например safonovich/ozon-data"); return; }
   if(!g.token){ slog("Нужен токен GitHub с правами repo"); return; }
   slog("Проверяю…");
-  pull(false).then(function(){ pullOzon(); slog(document.getElementById("syncLog").textContent === "Проверяю…" ? "Готово" : document.getElementById("syncLog").textContent); });
+  pull(false).then(function(){ pullOzon(); pullYandex(); slog(document.getElementById("syncLog").textContent === "Проверяю…" ? "Готово" : document.getElementById("syncLog").textContent); });
 };
 document.getElementById("pullNow").onclick = function(){
   readSettings();
@@ -996,7 +1063,7 @@ document.getElementById("expJson2").onclick = function(){
 render();
 if(ready()){
   status("", "Проверяю…");
-  pull(true).then(function(){ pullOzon(); });
+  pull(true).then(function(){ pullOzon(); pullYandex(); });
 } else {
   status("", "Только на этом устройстве");
 }
