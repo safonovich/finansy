@@ -118,6 +118,18 @@ input:focus,select:focus{outline:2px solid var(--acc);outline-offset:1px;border-
 .banner button{border:1px solid var(--line);background:var(--card);color:var(--tx);border-radius:10px;padding:9px 13px;font-size:14px;cursor:pointer}
 .banner button.pri{background:var(--acc);color:#fff;border-color:transparent}
 
+/* импорт */
+.imp{max-height:46vh;overflow:auto;border:1px solid var(--line);border-radius:14px;margin-top:12px}
+.impr{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line)}
+.impr:last-child{border-bottom:0}
+.impr input[type=checkbox]{width:20px;height:20px;flex:none}
+.impr .m{flex:1;min-width:0}
+.impr .d{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.impr .s{font-size:12px;color:var(--tx2)}
+.impr select{width:auto;padding:5px 8px;font-size:12px;border-radius:9px}
+.impr .a{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;font-size:14px}
+textarea{min-height:120px;font-family:ui-monospace,Menlo,monospace;font-size:13px}
+
 /* nav */
 nav{
   position:fixed;left:0;right:0;bottom:0;display:flex;
@@ -324,6 +336,21 @@ nav button.on{color:var(--acc)}
       <button class="ghost" id="pushNow" style="flex:1">Отправить моё</button>
     </div>
     <div class="small muted" id="syncLog" style="margin-top:12px"></div>
+
+    <div class="row" style="margin-top:20px"><h3>Выписка из банка</h3></div>
+    <div class="small muted" style="margin-top:6px">
+      Приложение Т-Банка → счёт → Детали счёта → Выписка по счёту → период → поделиться.
+      Открой файл, выдели весь текст и вставь сюда. Переводы между своими счетами отбрасываются сами.
+    </div>
+    <textarea id="impText" placeholder="сюда текст выписки" style="margin-top:10px"></textarea>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="ghost" id="impFileBtn" style="flex:1">Выбрать файл</button>
+      <button class="ghost" id="impGo" style="flex:1">Разобрать</button>
+      <input type="file" id="impPick" accept=".txt,.csv,.pdf" class="hide">
+    </div>
+    <div class="small muted" id="impLog" style="margin-top:8px"></div>
+    <div id="impList"></div>
+    <button class="save hide" id="impAdd">Добавить выбранные</button>
 
     <div class="row" style="margin-top:20px"><h3>Данные</h3></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
@@ -1159,6 +1186,158 @@ document.getElementById("copyTok").onclick = function(){
     f.type = "text"; f.select(); document.execCommand && document.execCommand("copy"); done();
   }
 };
+
+/* ---------- разбор банковской выписки ---------- */
+var СВОИ = /Внутренн(ий|его) перевод на договор|Перевод с договора|Перевод между сво/i;
+var ПРАВИЛА = [
+  [/ЮМани|YooMoney|ЮMoney/i,                         "income",  "Сайт"],
+  [/OZON|ОЗОН/i,                                     "income",  "Ozon магазин"],
+  [/Кэшбэк|Проценты на остаток/i,                    "income",  "Прочее"],
+  [/Зарплата|Аванс/i,                                "income",  "Прочее"],
+  [/GLOBUS|ПЯТЕРОЧКА|ПЯТЁРОЧКА|MAGNIT|МАГНИТ|PEREKRESTOK|ПЕРЕКРЕСТОК|LENTA|ЛЕНТА|DIXY|ДИКСИ|VKUSVILL|ВКУСВИЛЛ|AShAN|АШАН|MIRATORG/i, "expense", "Продукты"],
+  [/AZS|АЗС|GAZPROMNEFT|LUKOIL|ЛУКОЙЛ|ROSNEFT|ТАТНЕФТ|SHELL|Заправ/i, "expense", "Транспорт"],
+  [/Vkusnoitochka|KFC|BURGER|MCDONALD|COFFEE|КОФЕ|SHOKOLADNIC|ПИЦЦ|PIZZA|SUSHI|СУШИ|RESTORAN|РЕСТОРАН|CALIFORNIA|Яндекс.?Еда|DELIVERY|Столов/i, "expense", "Еда вне дома"],
+  [/МГТС|МТС|BEELINE|БИЛАЙН|MEGAFON|МЕГАФОН|TELE2|ТЕЛЕ2|Ростелеком|ЖКХ|Квартплат|Интернет/i, "expense", "Дом и связь"],
+  [/АПТЕК|APTEK|PHARM|Клиник|CLINIC|МЕДИЦ|Стоматол/i, "expense", "Здоровье"],
+  [/Метро|METRO |ТРОЙКА|Такси|TAXI|Yandex.?Go|Каршеринг|ЖД|Аэрофлот|AVIA/i, "expense", "Транспорт"],
+  [/Внешний перевод|Перевод по номеру/i,             "expense", "Переводы"]
+];
+
+function категория(desc, знак){
+  for(var i=0;i<ПРАВИЛА.length;i++){
+    var r = ПРАВИЛА[i];
+    if(r[0].test(desc) && ((r[1]==="income") === (знак>0))) return r[2];
+  }
+  return "Прочее";
+}
+
+function отпечаток(o){
+  return "b:" + o.date + ":" + Math.round(o.amount*100) + ":" +
+         o.desc.replace(/\s+/g,"").slice(0,28).toLowerCase();
+}
+
+function разобратьВыписку(text){
+  var out = [], свои = 0, суммаСвоих = 0;
+  var lines = String(text).replace(/ /g," ").split(/\r?\n/);
+  var pat = /^(\d{2}\.\d{2}\.\d{2})(?:\s+\d{2}:\d{2})?\s+(\d{2}\.\d{2}\.\d{2})\s+(.+?)\s+([+\-]?\s?[\d\s]+[.,]\d{2})\s*₽\s+([+\-]?\s?[\d\s]+[.,]\d{2})\s*₽\s*$/;
+  var last = null;
+  for(var i=0;i<lines.length;i++){
+    var l = lines[i].replace(/\s+$/,"");
+    var m = pat.exec(l);
+    if(m){
+      var сум = m[5].replace(/[\s+]/g,"").replace(",",".");
+      var знак = /\+/.test(m[5]) ? 1 : -1;
+      var v = Math.abs(parseFloat(сум)) * знак;
+      var д = m[1], гггг = "20" + д.slice(6,8);
+      last = {date: гггг + "-" + д.slice(3,5) + "-" + д.slice(0,2), desc: m[3].trim(), amount: v};
+      out.push(last);
+    } else if(last && l.trim() && l.length < 70 && !/^(Дата|Операции|Расходы|Поступления|Баланс|Кэшбэк|Страница|•)/.test(l.trim())){
+      last.desc += " " + l.trim();
+    }
+  }
+  // отбрасываем переводы между своими счетами
+  var чужие = out.filter(function(o){
+    if(СВОИ.test(o.desc)){ свои++; суммаСвоих += Math.abs(o.amount); return false; }
+    return true;
+  });
+  return {операции: чужие, своих: свои, суммаСвоих: Math.round(суммаСвоих)};
+}
+
+var импорт = [];
+
+function показатьИмпорт(text){
+  var r = разобратьВыписку(text);
+  var есть = {};
+  S.tx.forEach(function(x){ if(x.fp) есть[x.fp] = 1; });
+
+  импорт = [];
+  var дублей = 0, счёт = {};
+  r.операции.forEach(function(o){
+    // две одинаковые операции в один день — разные, различаем номером
+    var база = отпечаток(o);
+    счёт[база] = (счёт[база] || 0) + 1;
+    var fp = счёт[база] > 1 ? база + "#" + счёт[база] : база;
+    if(есть[fp]){ дублей++; return; }
+    есть[fp] = 1;
+    импорт.push({fp:fp, date:o.date, desc:o.desc, amount:Math.abs(o.amount),
+                 type: o.amount > 0 ? "income" : "expense",
+                 cat: категория(o.desc, o.amount), take:true});
+  });
+
+  var lg = "Нашёл операций: " + (r.операции.length + r.своих)
+    + ". Переводов между своими счетами отброшено: " + r.своих
+    + " на " + fmt(r.суммаСвоих) + " ₽."
+    + (дублей ? " Уже есть в записях: " + дублей + "." : "");
+  document.getElementById("impLog").textContent = lg;
+
+  if(!импорт.length){
+    document.getElementById("impList").innerHTML = "";
+    document.getElementById("impAdd").classList.add("hide");
+    return;
+  }
+
+  var опции = function(тип, выбр){
+    return CATS[тип].map(function(c){
+      return '<option'+(c===выбр?' selected':'')+'>'+esc(c)+'</option>';
+    }).join("");
+  };
+  document.getElementById("impList").innerHTML = '<div class="imp">' + импорт.map(function(o,i){
+    return '<div class="impr" data-i="'+i+'">'
+      + '<input type="checkbox" checked>'
+      + '<div class="m"><div class="d">'+esc(o.desc)+'</div>'
+      + '<div class="s">'+o.date.slice(8,10)+"."+o.date.slice(5,7)+'</div></div>'
+      + '<select>'+опции(o.type, o.cat)+'</select>'
+      + '<div class="a">'+(o.type==="income"?"+":"−")+fmt(o.amount)+'</div></div>';
+  }).join("") + '</div>';
+  document.getElementById("impAdd").classList.remove("hide");
+  document.getElementById("impAdd").textContent = "Добавить " + импорт.length + " операций";
+}
+
+document.getElementById("impList").onchange = function(e){
+  var row = e.target.closest(".impr"); if(!row) return;
+  var o = импорт[+row.dataset.i];
+  if(e.target.type === "checkbox") o.take = e.target.checked;
+  else o.cat = e.target.value;
+};
+
+document.getElementById("impGo").onclick = function(){
+  var t = document.getElementById("impText").value;
+  if(!t.trim()){ document.getElementById("impLog").textContent = "Вставь текст выписки в поле выше."; return; }
+  показатьИмпорт(t);
+};
+
+document.getElementById("impFileBtn").onclick = function(){ document.getElementById("impPick").click(); };
+document.getElementById("impPick").onchange = function(){
+  var f = this.files[0]; if(!f) return;
+  if(/\.pdf$/i.test(f.name)){
+    document.getElementById("impLog").textContent =
+      "PDF браузер сам не читает. Открой файл, выдели весь текст (Cmd+A), скопируй и вставь в поле выше.";
+    return;
+  }
+  var rd = new FileReader();
+  rd.onload = function(){
+    document.getElementById("impText").value = rd.result;
+    показатьИмпорт(rd.result);
+  };
+  rd.readAsText(f, "utf-8");
+};
+
+document.getElementById("impAdd").onclick = function(){
+  var n = 0;
+  импорт.forEach(function(o){
+    if(!o.take) return;
+    S.tx.push({id:uid(), type:o.type, amount:o.amount, desc:o.desc,
+               cat:o.cat, date:o.date, once:false, fp:o.fp});
+    n++;
+  });
+  if(n){ save(); syncSoon(); render(); toast("Добавлено: " + n); }
+  импорт = [];
+  document.getElementById("impList").innerHTML = "";
+  document.getElementById("impText").value = "";
+  document.getElementById("impAdd").classList.add("hide");
+  document.getElementById("impLog").textContent = "Добавлено операций: " + n + ".";
+};
+
 document.getElementById("expJson2").onclick = function(){
   dl("finansy.json", JSON.stringify(S, null, 2), "application/json");
 };
