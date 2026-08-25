@@ -348,9 +348,9 @@ var MONTHS = ["Январь","Февраль","Март","Апрель","Май"
 
 var CATS = {
   expense:["Продукты","Еда вне дома","Транспорт","Отдых и поездки","Подарки и помощь","Дом и связь","Работа","Здоровье","Переводы","Прочее"],
-  income:["Кинцуги МК","Кинцуги наборы","Ozon магазин","Съёмки","Боты","Прочее"]
+  income:["Кинцуги МК","Кинцуги наборы","Ozon магазин","Яндекс Маркет","Сайт","Съёмки","Боты","Прочее"]
 };
-var PASSIVE = ["Ozon магазин","Кинцуги наборы","Боты"];
+var PASSIVE = ["Ozon магазин","Яндекс Маркет","Сайт","Кинцуги наборы","Боты"];
 var COLORS = ["--c1","--c2","--c3","--c4","--c5","--c6","--c7","--c8","--c9"];
 
 function uid(){ return Math.random().toString(36).slice(2,10)+Date.now().toString(36); }
@@ -445,7 +445,7 @@ function opRow(x, withDel){
   var color = x.type==="income" ? css("--c1") : css("--c3");
   return '<div class="op" data-id="'+x.id+'">'
     + '<i class="dot" style="background:'+color+'"></i>'
-    + '<div class="m"><div class="d">'+esc(x.desc||x.cat)+(x.once?'<span class="tag">разовая</span>':'')+'</div>'
+    + '<div class="m"><div class="d">'+esc(x.desc||x.cat)+(x.once?'<span class="tag">разовая</span>':'')+(x.auto?'<span class="tag">робот</span>':'')+'</div>'
     + '<div class="c">'+esc(x.cat)+' · '+x.date.slice(8,10)+"."+x.date.slice(5,7)+'</div></div>'
     + '<div class="a" style="color:'+(x.type==="income"?css("--c1"):"inherit")+'">'
     + (x.type==="income"?"+":"−")+fmt(x.amount)+'</div>'
@@ -814,6 +814,46 @@ document.getElementById("impFile").onchange = function(){
 };
 
 
+
+/* ---------- записи, которые ведёт робот ---------- */
+/* id вида auto:ozon:2026-08 — при каждом сборе запись обновляется, а не дублируется */
+function applyAuto(){
+  var want = [];
+  OZON.месяцы.forEach(function(m){
+    if(m.начислено) want.push({id:"auto:ozon:"+m.м, cat:"Ozon магазин", amount:m.начислено,
+      desc:"Ozon — начислено за месяц"});
+  });
+  YANDEX.месяцы.forEach(function(m){
+    if(m.на_руки) want.push({id:"auto:yandex:"+m.м, cat:"Яндекс Маркет", amount:m.на_руки,
+      desc:"Яндекс Маркет — за вычетом услуг"});
+  });
+  YOOKASSA.месяцы.forEach(function(m){
+    if(m.на_счёт) want.push({id:"auto:yookassa:"+m.м, cat:"Сайт", amount:m.на_счёт,
+      desc:"Сайт — пришло на счёт"});
+  });
+
+  var by = {};
+  S.tx.forEach(function(x){ by[x.id] = x; });
+  var changed = false;
+
+  want.forEach(function(w){
+    var мес = w.id.split(":")[2];
+    var дата = мес + "-" + String(new Date(+мес.slice(0,4), +мес.slice(5,7), 0).getDate()).padStart(2,"0");
+    var было = by[w.id];
+    if(было){
+      if(Math.round(было.amount) !== Math.round(w.amount)){
+        было.amount = w.amount; было.desc = w.desc; было.cat = w.cat; changed = true;
+      }
+    } else {
+      S.tx.push({id:w.id, type:"income", amount:w.amount, desc:w.desc, cat:w.cat,
+                 date:дата, once:false, auto:true});
+      changed = true;
+    }
+  });
+
+  if(changed){ save(); syncSoon(); render(); }
+}
+
 /* ---------- синхронизация через GitHub Contents API ---------- */
 var API = "https://api.github.com";
 var remoteSha = null, busy = false;
@@ -963,7 +1003,7 @@ function pullYookassa(){
           способы: b["способы"] || []
         });
       });
-      render();
+      applyAuto();
     })
     .catch(function(){});
 }
@@ -994,7 +1034,7 @@ function pullYandex(){
           штук: b["штук"] || 0
         });
       });
-      render();
+      applyAuto();
     })
     .catch(function(){});
 }
@@ -1024,7 +1064,7 @@ function pullOzon(){
           штук: d["штук"] || 0
         });
       });
-      render();
+      applyAuto();
     })
     .catch(function(){});
 }
