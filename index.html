@@ -350,6 +350,7 @@ nav button.on{color:var(--acc)}
     </div>
     <div class="small muted" id="impLog" style="margin-top:8px"></div>
     <div id="impList"></div>
+    <div id="impDup"></div>
     <button class="save hide" id="impAdd">Добавить выбранные</button>
 
     <div class="row" style="margin-top:20px"><h3>Данные</h3></div>
@@ -1245,6 +1246,62 @@ function разобратьВыписку(text){
 
 var импорт = [];
 
+/* какие старые записи перекрываются выпиской */
+var перекрытия = [];
+
+function последнийДень(iso){
+  var y = +iso.slice(0,4), m = +iso.slice(5,7);
+  return new Date(y, m, 0).getDate() === +iso.slice(8,10);
+}
+
+function найтиПерекрытия(ops){
+  var месяцы = {}, поДате = {};
+  ops.forEach(function(o){
+    месяцы[o.date.slice(0,7)] = 1;
+    поДате[o.date + ":" + Math.round(o.amount*100)] = 1;
+  });
+  var out = [];
+  S.tx.forEach(function(x){
+    if(x.fp || x.auto) return;                 // это уже из выписки или от робота
+    if(!месяцы[x.date.slice(0,7)]) return;     // другой месяц — не трогаем
+    var точное = поДате[x.date + ":" + Math.round(x.amount*100)];
+    var свод = x.type === "expense" && x.amount >= 3000 && последнийДень(x.date);
+    // ручной доход по каналу, который уже ведёт робот
+    var робот = x.type === "income" && S.tx.some(function(y){
+      return y.auto && y.cat === x.cat && y.date.slice(0,7) === x.date.slice(0,7);
+    });
+    if(точное || свод || робот){
+      out.push({id:x.id, desc:x.desc, cat:x.cat, amount:x.amount, type:x.type, date:x.date,
+                why: точное ? "та же дата и сумма" : (свод ? "свод за месяц" : "это уже считает робот"),
+                take:true});
+    }
+  });
+  return out;
+}
+
+function показатьПерекрытия(ops){
+  перекрытия = найтиПерекрытия(ops);
+  var el = document.getElementById("impDup");
+  if(!перекрытия.length){ el.innerHTML = ""; return; }
+  var сумма = перекрытия.reduce(function(a,x){ return a + x.amount; }, 0);
+  el.innerHTML = '<div class="banner" style="margin-top:12px">'
+    + '<div>В этих месяцах уже есть ' + перекрытия.length + ' записей на ' + fmt(сумма)
+    + ' ₽, которые выписка повторяет. Если их оставить, месяц посчитается дважды. Убрать их вместе с добавлением?</div></div>'
+    + '<div class="imp">' + перекрытия.map(function(o,i){
+        return '<div class="impr" data-d="'+i+'">'
+          + '<input type="checkbox" checked>'
+          + '<div class="m"><div class="d">'+esc(o.desc || o.cat)+'</div>'
+          + '<div class="s">'+o.date.slice(8,10)+"."+o.date.slice(5,7)+' · '+esc(o.cat)+' · '+o.why+'</div></div>'
+          + '<div class="a">'+(o.type==="income"?"+":"−")+fmt(o.amount)+'</div></div>';
+      }).join("") + '</div>';
+}
+
+document.getElementById("impDup").onchange = function(e){
+  var row = e.target.closest(".impr"); if(!row) return;
+  перекрытия[+row.dataset.d].take = e.target.checked;
+};
+
+
 function показатьИмпорт(text){
   var r = разобратьВыписку(text);
   var есть = {};
@@ -1269,6 +1326,8 @@ function показатьИмпорт(text){
     + " на " + fmt(r.суммаСвоих) + " ₽."
     + (дублей ? " Уже есть в записях: " + дублей + "." : "");
   document.getElementById("impLog").textContent = lg;
+
+  показатьПерекрытия(импорт);
 
   if(!импорт.length){
     document.getElementById("impList").innerHTML = "";
@@ -1323,19 +1382,24 @@ document.getElementById("impPick").onchange = function(){
 };
 
 document.getElementById("impAdd").onclick = function(){
-  var n = 0;
+  var n = 0, убрано = 0;
+  var надо = {};
+  перекрытия.forEach(function(o){ if(o.take){ надо[o.id] = 1; убрано++; } });
+  if(убрано) S.tx = S.tx.filter(function(x){ return !надо[x.id]; });
   импорт.forEach(function(o){
     if(!o.take) return;
     S.tx.push({id:uid(), type:o.type, amount:o.amount, desc:o.desc,
                cat:o.cat, date:o.date, once:false, fp:o.fp});
     n++;
   });
-  if(n){ save(); syncSoon(); render(); toast("Добавлено: " + n); }
-  импорт = [];
+  if(n || убрано){ save(); syncSoon(); render(); toast("Добавлено: " + n + (убрано ? ", убрано: " + убрано : "")); }
+  импорт = []; перекрытия = [];
   document.getElementById("impList").innerHTML = "";
+  document.getElementById("impDup").innerHTML = "";
   document.getElementById("impText").value = "";
   document.getElementById("impAdd").classList.add("hide");
-  document.getElementById("impLog").textContent = "Добавлено операций: " + n + ".";
+  document.getElementById("impLog").textContent =
+    "Добавлено операций: " + n + (убрано ? ". Убрано старых записей: " + убрано + "." : ".");
 };
 
 document.getElementById("expJson2").onclick = function(){
