@@ -209,6 +209,24 @@ nav button.on{color:var(--acc)}
         <div id="opsList"></div>
       </div>
     </div>
+
+    <div class="card">
+      <div class="row"><h3>Магазин Ozon</h3><div class="muted small" id="ozDate">по сбору робота</div></div>
+      <div id="ozRows"></div>
+      <div class="small muted" style="margin-top:12px" id="ozNote"></div>
+    </div>
+
+    <div class="card" id="ykCard">
+      <div class="row"><h3>Сайт (ЮKassa)</h3><div class="muted small" id="ykDate"></div></div>
+      <div id="ykRows"></div>
+      <div class="small muted" style="margin-top:12px" id="ykNote"></div>
+    </div>
+
+    <div class="card" id="yaCard">
+      <div class="row"><h3>Магазин Яндекс Маркет</h3><div class="muted small" id="yaDate"></div></div>
+      <div id="yaRows"></div>
+      <div class="small muted" style="margin-top:12px" id="yaNote"></div>
+    </div>
   </section>
 
   <!-- ===== ЗАПИСАТЬ ===== -->
@@ -270,24 +288,6 @@ nav button.on{color:var(--acc)}
         <span><i class="dot" style="background:var(--c1)"></i>доходы</span>
         <span><i class="dot" style="background:var(--c3)"></i>траты</span>
       </div>
-    </div>
-
-    <div class="card">
-      <div class="row"><h3>Магазин Ozon</h3><div class="muted small" id="ozDate">по сбору робота</div></div>
-      <div id="ozRows"></div>
-      <div class="small muted" style="margin-top:12px" id="ozNote"></div>
-    </div>
-
-    <div class="card" id="ykCard">
-      <div class="row"><h3>Сайт (ЮKassa)</h3><div class="muted small" id="ykDate"></div></div>
-      <div id="ykRows"></div>
-      <div class="small muted" style="margin-top:12px" id="ykNote"></div>
-    </div>
-
-    <div class="card" id="yaCard">
-      <div class="row"><h3>Магазин Яндекс Маркет</h3><div class="muted small" id="yaDate"></div></div>
-      <div id="yaRows"></div>
-      <div class="small muted" style="margin-top:12px" id="yaNote"></div>
     </div>
 
     <div class="card">
@@ -578,7 +578,7 @@ function render(){
 
 
   // магазин Ozon
-  document.getElementById("ozDate").textContent = "данные робота на " + OZON.собрано;
+  document.getElementById("ozDate").textContent = OZON.собрано ? "данные робота на " + OZON.собрано : "";
   var oz = OZON.месяцы.filter(function(x){ return x.м === key(cur); })[0];
   if(!oz){
     document.getElementById("ozRows").innerHTML =
@@ -1092,6 +1092,7 @@ function pullYookassa(){
         });
       });
       applyAuto();
+      render();
     })
     .catch(function(){});
 }
@@ -1123,6 +1124,7 @@ function pullYandex(){
         });
       });
       applyAuto();
+      render();
     })
     .catch(function(){});
 }
@@ -1162,6 +1164,7 @@ function pullOzon(){
         });
       });
       applyAuto();
+      render();
     })
     .catch(function(){});
 }
