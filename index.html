@@ -69,6 +69,16 @@ h1,h2,h3{margin:0;font-weight:600}
 .op .c{font-size:12px;color:var(--tx2)}
 .op .a{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
 .op .x{background:none;border:0;color:var(--tx2);font-size:17px;padding:4px 2px 4px 8px;cursor:pointer}
+.mini{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
+.mini td{padding:4px 0;border-bottom:1px solid var(--line);color:var(--tx2)}
+.mini td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;padding-left:10px}
+.mini tr:last-child td{border-bottom:0}
+details.more{margin-top:10px}
+details.more>summary{cursor:pointer;font-size:12.5px;color:var(--tx2);list-style:none;
+  padding:7px 0;border-top:1px solid var(--line);user-select:none}
+details.more>summary::-webkit-details-marker{display:none}
+details.more>summary:before{content:"▸ ";display:inline-block;transition:transform .15s}
+details.more[open]>summary:before{content:"▾ "}
 .tag{font-size:11px;border:1px solid var(--line);border-radius:6px;padding:1px 5px;color:var(--tx2);margin-left:6px;vertical-align:1px}
 
 /* form */
@@ -575,21 +585,49 @@ function render(){
       '<div class="muted small" style="padding:8px 0">За этот месяц робот ещё не собирал данные.</div>';
     document.getElementById("ozNote").textContent = "";
   } else {
-    var доля = Math.round(oz.начислено / oz.продано * 100);
+    var доля = oz.продано ? Math.round(oz.начислено / oz.продано * 100) : 0;
     var line = function(k, v, big){
       return '<div class="row" style="padding:7px 0;border-bottom:1px solid var(--line)">'
         + '<span'+(big?' style="font-weight:600"':' class="muted"')+'>'+k+'</span>'
         + '<span class="tnum"'+(big?' style="font-weight:600;color:'+css("--acc")+'"':'')+'>'+money(v)+'</span></div>';
     };
-    document.getElementById("ozRows").innerHTML =
+    var html =
         line("Продано на", oz.продано)
       + line("Комиссия Ozon", oz.комиссия)
-      + line("Из них реклама и продвижение", oz.реклама)
+      + line("Реклама и продвижение", -Math.abs(oz.реклама))
       + line("Логистика и прочие услуги", oz.услуги - oz.реклама)
       + line("Начислено к перечислению", oz.начислено, true);
-    document.getElementById("ozNote").textContent =
-      "Продано " + oz.штук + " шт. До тебя доходит " + доля + "% от цены. "
-      + "Начисления приходят на счёт с задержкой — в доходах их отмечай по факту поступления.";
+
+    if(oz.строки && oz.строки.length){
+      html += '<details class="more"><summary>Куда ушли деньги — все статьи ('+oz.строки.length+')</summary>'
+        + '<table class="mini">'
+        + oz.строки.map(function(r){
+            return '<tr><td>'+esc(r["тип"])+'</td><td class="n">'+money(r["сумма"])+'</td></tr>'; }).join("")
+        + '</table></details>';
+    }
+    if(oz.товары && oz.товары.length){
+      html += '<details class="more"><summary>Что покупали — '+oz.товары.length+' '
+        + (oz.товары.length===1?"товар":oz.товары.length<5?"товара":"товаров")+'</summary>'
+        + '<table class="mini">'
+        + oz.товары.map(function(t){
+            var им = String(t["товар"] || "").split("/")[0].trim().slice(0,42);
+            return '<tr><td>'+esc(им)+'</td><td class="n">'+fmt(t["выручка"]||0)+' ₽ · '
+              + (t["заказано_шт"]||0)+' шт.'+((t["возвраты_шт"]||0)?' · возврат '+t["возвраты_шт"]:'')+'</td></tr>'; }).join("")
+        + '</table></details>';
+    }
+    document.getElementById("ozRows").innerHTML = html;
+
+    var зам = [];
+    зам.push("Продано " + oz.штук + " шт. по проводкам, до тебя доходит " + доля + "% от цены.");
+    if(oz.выручка){
+      зам.push("Заказано за месяц на " + fmt(oz.выручка) + " ₽ (" + oz.заказано + " шт."
+        + (oz.возвраты_шт ? ", возвратов " + oz.возвраты_шт : "") + ")"
+        + (oz.отправлений ? ", отправлений " + oz.отправлений : "") + ".");
+      if(oz.выручка > oz.продано * 1.15)
+        зам.push("Заказы больше проводок — часть денег Ozon начислит в следующем месяце.");
+    }
+    зам.push("Начисления приходят на счёт с задержкой.");
+    document.getElementById("ozNote").textContent = зам.join(" ");
   }
 
   // сайт, ЮKassa
@@ -610,14 +648,33 @@ function render(){
           + '<span'+(big?' style="font-weight:600"':' class="muted"')+'>'+k+'</span>'
           + '<span class="tnum"'+(big?' style="font-weight:600;color:'+css("--acc")+'"':'')+'>'+money(v)+'</span></div>';
       };
-      document.getElementById("ykRows").innerHTML =
+      var htmlK =
           lineK("Принято от покупателей", yk.принято)
         + (yk.комиссия ? lineK("Комиссия ЮKassa", -yk.комиссия) : "")
         + (yk.возвраты ? lineK("Возвраты", -yk.возвраты) : "")
         + lineK("Пришло на счёт", yk.на_счёт, true);
-      var сп = yk.способы.slice(0,3).map(function(x){ return x["способ"]; }).join(", ");
+      if(yk.не_оплачено)
+        htmlK += lineK("Начали платить, но не дошли", -yk.потеряно);
+      if(yk.способы && yk.способы.length){
+        htmlK += '<details class="more"><summary>Чем платили</summary><table class="mini">'
+          + yk.способы.map(function(x){
+              return '<tr><td>'+esc(x["способ"])+'</td><td class="n">'+fmt(x["сумма"])+' ₽</td></tr>'; }).join("")
+          + '</table></details>';
+      }
+      if(yk.отвалы && yk.отвалы.length){
+        htmlK += '<details class="more"><summary>Почему не дошли — '+yk.не_оплачено+' шт. на '
+          + fmt(yk.потеряно)+' ₽</summary><table class="mini">'
+          + yk.отвалы.map(function(x){
+              return '<tr><td>'+esc(x["причина"])+'</td><td class="n">'+x["сколько"]+' · '
+                + fmt(x["сумма"])+' ₽</td></tr>'; }).join("")
+          + '</table></details>';
+      }
+      document.getElementById("ykRows").innerHTML = htmlK;
+      var всего = yk.платежей + yk.не_оплачено;
       document.getElementById("ykNote").textContent =
-        "Оплат: " + yk.платежей + (сп ? ". Чем платили: " + сп : "");
+        "Оплат: " + yk.платежей + (yk.не_оплачено
+          ? " из " + всего + ". Доплачивает " + Math.round(yk.платежей / всего * 100) + "% тех, кто начал."
+          : ". Все, кто начал платить, дошли до конца.");
     }
   }
 
@@ -1028,7 +1085,10 @@ function pullYookassa(){
           возвраты: b["возвраты"] || 0,
           на_счёт: b["на_счёт"] || 0,
           платежей: b["платежей"] || 0,
-          способы: b["способы"] || []
+          способы: b["способы"] || [],
+          не_оплачено: b["не_оплачено"] || 0,
+          потеряно: b["потеряно"] || 0,
+          отвалы: b["отвалы"] || []
         });
       });
       applyAuto();
@@ -1082,6 +1142,9 @@ function pullOzon(){
         (d["строки"] || []).forEach(function(r){
           if(/родвижение|реклам/i.test(r["тип"])) реклама += r["сумма"];
         });
+        var отпр = b["по_отправлениям"] || {};
+        var тов = (b["товары"] || []).filter(function(t){
+          return (t["выручка"] || 0) > 0 || (t["возвраты_шт"] || 0) > 0; });
         OZON.месяцы.push({
           м: k,
           продано: d["продано"] || 0,
@@ -1089,7 +1152,13 @@ function pullOzon(){
           услуги: d["услуги"] || 0,
           начислено: d["начислено_нетто"] || 0,
           реклама: реклама,
-          штук: d["штук"] || 0
+          штук: d["штук"] || 0,
+          строки: d["строки"] || [],
+          выручка: b["выручка_итого"] || 0,
+          заказано: b["заказано_шт_итого"] || 0,
+          отправлений: отпр["отправлений"] || 0,
+          товары: тов,
+          возвраты_шт: тов.reduce(function(a,t){ return a + (t["возвраты_шт"] || 0); }, 0)
         });
       });
       applyAuto();
